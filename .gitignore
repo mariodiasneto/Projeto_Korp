@@ -1,0 +1,7 @@
+.DS_Store
+*.pem
+*.key
+venv/
+.venv/
+.idea/
+.vscode/

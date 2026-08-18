@@ -1,0 +1,92 @@
+---
+- name: Provisionar e Deploy do Projeto Korp na Infraestrutura Linux / AWS
+  hosts: app_servers
+  become: true
+  vars:
+    project_dir: "/opt/projeto-korp"
+
+  tasks:
+    - name: Verificar se o Docker já está instalado
+      ansible.builtin.command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+
+    - name: Atualizar cache de pacotes (APT - Ubuntu/Debian)
+      ansible.builtin.apt:
+        update_cache: false
+        cache_valid_time: 3600
+      when:
+        - ansible_facts['os_family'] == "Debian"
+        - docker_check.rc != 0
+
+    - name: Instalar dependências básicas (Ubuntu/Debian)
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - git
+          - docker.io
+          - docker-compose-v2
+        state: present
+      when:
+        - ansible_facts['os_family'] == "Debian"
+        - docker_check.rc != 0
+
+    - name: Garantir que o serviço do Docker está em execução e habilitado no boot
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Criar diretório do projeto no servidor remoto
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copiar arquivos da aplicação para o servidor remoto
+      ansible.builtin.copy:
+        src: "../{{ item }}"
+        dest: "{{ project_dir }}/"
+        mode: '0755'
+      loop:
+        - app
+        - nginx
+        - prometheus
+        - grafana
+        - docker-compose.yml
+
+    - name: Parar containers existentes (limpeza preventiva)
+      ansible.builtin.command:
+        cmd: docker compose down
+        chdir: "{{ project_dir }}"
+      ignore_errors: true
+
+    - name: Build da imagem e subida do ambiente Docker Compose
+      ansible.builtin.command:
+        cmd: docker compose up -d --build
+        chdir: "{{ project_dir }}"
+
+    - name: Aguardar o serviço http-server-projeto-korp responder via Nginx na porta 80
+      ansible.builtin.uri:
+        url: "http://localhost:80/projeto-korp"
+        method: GET
+        status_code: 200
+      register: service_response
+      until: service_response.status == 200
+      retries: 10
+      delay: 3
+
+    - name: Exibir resposta do endpoint HTTP no console do Ansible
+      ansible.builtin.debug:
+        msg:
+          - "=================================================="
+          - "TESTE DE FUNCIONAMENTO DO SERVIÇO PROJETO KORP"
+          - "URL: http://localhost:80/projeto-korp"
+          - "HTTP Status Code: {{ service_response.status }}"
+          - "Response JSON Payload:"
+          - "{{ service_response.json }}"
+          - "=================================================="

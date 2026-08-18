@@ -1,0 +1,58 @@
+networks:
+  korp-network:
+    driver: bridge
+    name: korp-network
+
+services:
+  http-server-projeto-korp:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: http-server-projeto-korp:latest
+    container_name: http-server-projeto-korp
+    restart: always
+    networks:
+      - korp-network
+    # Not publishing ports to host as per instructions
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/http-server-projeto-korp.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - korp-network
+    depends_on:
+      - http-server-projeto-korp
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - korp-network
+    depends_on:
+      - http-server-projeto-korp
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - korp-network
+    depends_on:
+      - prometheus
